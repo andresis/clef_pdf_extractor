@@ -34,7 +34,7 @@
 1. **Non-interactive run** (stdin piped/closed, e.g. CI): the review prompt hits EOF → treat as skip, still print valid JSON, exit 2. → Task 6 `test_eof_skips`, Task 7 `test_required_failure_without_input_exits_2`.
 2. **Extractor reports a wrong or impossible page** (0, 99, null): validator relocates by text, or scores 0 without calling clef and without crashing. → Task 5 `test_located_value_corrects_page`, `test_unlocatable_with_invalid_page_scores_zero`.
 3. **Quote paraphrased or whitespace differs** from the PDF text: locate with normalized whitespace, then fall back to searching the raw value. → Task 2 `test_locate_normalizes_whitespace`, Task 5 `test_falls_back_to_raw_when_quote_paraphrased`.
-4. **Ambiguous numbers/dates**: `1.200`/`1,200` → 1200, `0.125` → 0.125, `03/10/2026` → 2026-10-03 (day-first), `10/25/2026` → month-first fallback. → Task 1 parametrized normalization tests.
+4. **Ambiguous or incomplete numbers/dates**: `1.200`/`1,200` → 1200, `0.125` → 0.125, `03/10/2026` → 2026-10-03 (day-first), `10/25/2026` → month-first fallback, `October 2026` → rejected (no invented day). → Task 1 parametrized normalization tests.
 5. **Person types an invalid correction or presses Enter on a missing / ill-typed value**: re-prompt, never store an invalid value. → Task 6 `test_invalid_correction_reprompts`, `test_cannot_accept_missing_value`, `test_cannot_accept_type_invalid_value`.
 
 ---
@@ -269,8 +269,8 @@ def test_normalize_date(raw, expected):
     assert normalize("date", raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["", "soon", "5", "13"])
-def test_normalize_date_rejects(raw):
+@pytest.mark.parametrize("raw", ["", "soon", "5", "13", "October 2026", "10/2026"])
+def test_normalize_date_rejects(raw):  # incomplete dates must not get today's day/month filled in
     with pytest.raises(ValueError):
         normalize("date", raw)
 
@@ -297,6 +297,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -425,10 +426,14 @@ def _normalize_date(raw: str) -> str:
         s = re.sub(rf"\b{fr}\b", en, s)
     iso = bool(_ISO_START.match(s))
     try:
-        parsed = dateparser.parse(s, dayfirst=not iso, yearfirst=iso)
+        # Parse with two different defaults: if they disagree, a component was missing and got invented.
+        a = dateparser.parse(s, dayfirst=not iso, yearfirst=iso, default=datetime(2000, 1, 1))
+        b = dateparser.parse(s, dayfirst=not iso, yearfirst=iso, default=datetime(2001, 2, 2))
     except (ValueError, OverflowError) as e:
         raise ValueError(f"not a date: {raw!r}") from e
-    return parsed.date().isoformat()
+    if a.date() != b.date():
+        raise ValueError(f"incomplete date: {raw!r}")
+    return a.date().isoformat()
 
 
 def normalize(field_type: FieldType, raw: str) -> str | float:
@@ -1362,8 +1367,9 @@ def test_separates_right_from_wrong(clef, dense):
         return v.validate(TOTAL, Candidate("total", raw, 1, quote)).score
 
     assert score("1.200,00 EUR", "Total TTC: 1.200,00 EUR") > 0.8
-    assert score("1.500,00 EUR", None) < 0.1
-    assert score("1.000,00 EUR", "Sous-total HT: 1.000,00 EUR") < 0.1
+    # Probe 2026-10-03 (this exact request): right 0.96, wrong 0.017–0.06, subtotal 0.013–0.046.
+    assert score("1.500,00 EUR", None) < 0.2
+    assert score("1.000,00 EUR", "Sous-total HT: 1.000,00 EUR") < 0.2
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**

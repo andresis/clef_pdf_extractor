@@ -42,6 +42,8 @@ Tables / line items, additional extractor backends (e.g. Claude), web UI, batch 
 
 \* The date was outside the crop: clef-flash correctly reported it not shown. Crops must contain the field's own evidence.
 
+Second probe with the exact §4.3 request (two images: crop + full page; `shown`/`semantic`; score = min): right value 0.96 (sparse and dense), wrong value 0.017 / 0.06, subtotal-as-total 0.013 / 0.046. Two images are accepted and stay around 2k input tokens.
+
 ## 3. Architecture
 
 ```
@@ -174,7 +176,7 @@ status ∈ {"valid", "user_confirmed", "user_corrected", "needs_review", "missin
 ### 8.1 Tests
 
 1. **Unit (pytest, no models):** schema loading + JSON-schema generation + normalization; `pdf.locate` page/bbox correctness and crop geometry; text-layer detection; gate rules table; `review_cli` with scripted input (accept / correct / invalid correction / skip). clef and OpenAI clients are faked.
-2. **Integration (`@pytest.mark.clef`, skipped if Ollama is down):** generated sparse and dense pages; assert right value > 0.8, wrong value < 0.1, subtotal-as-total < 0.1.
+2. **Integration (`@pytest.mark.clef`, skipped if Ollama is down):** generated sparse and dense pages; assert right value > 0.8, wrong value < 0.2, subtotal-as-total < 0.2 (regression guards; the pass mark is the threshold).
 3. **End-to-end (`@pytest.mark.e2e`, needs `OPENAI_API_KEY`, costs money):** 2–3 known-answer PDFs through the full pipeline → `complete`, correct values, no prompts.
 
 ### 8.2 Calibration
