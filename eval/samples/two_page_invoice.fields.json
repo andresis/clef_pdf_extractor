@@ -1,0 +1,12 @@
+{
+  "invoice_date": {
+    "type": "date",
+    "description": "Invoice issue date",
+    "required": true
+  },
+  "total": {
+    "type": "number",
+    "description": "Grand total",
+    "required": true
+  }
+}

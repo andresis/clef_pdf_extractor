@@ -1,0 +1,37 @@
+{
+  "pdf": "fr_form.pdf",
+  "fields": {
+    "last_name": {
+      "type": "string",
+      "description": "Family name (nom)",
+      "required": true,
+      "raw": "Martin",
+      "page": 1,
+      "wrong": [
+        "Claire"
+      ]
+    },
+    "birth_date": {
+      "type": "date",
+      "description": "Date of birth",
+      "required": true,
+      "raw": "14/02/1990",
+      "page": 1,
+      "wrong": [
+        "14/02/1991",
+        "12/04/1990"
+      ]
+    },
+    "postal_code": {
+      "type": "string",
+      "description": "Postal code",
+      "required": true,
+      "raw": "69003",
+      "page": 1,
+      "wrong": [
+        "69300",
+        "69030"
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "date": {
+    "type": "date",
+    "description": "Purchase date",
+    "required": true
+  },
+  "total": {
+    "type": "number",
+    "description": "Total paid",
+    "required": true
+  },
+  "card_last4": {
+    "type": "string",
+    "description": "Last 4 digits of the payment card",
+    "required": true
+  }
+}

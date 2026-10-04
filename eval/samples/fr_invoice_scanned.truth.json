@@ -1,0 +1,49 @@
+{
+  "pdf": "fr_invoice_scanned.pdf",
+  "fields": {
+    "invoice_number": {
+      "type": "string",
+      "description": "Invoice number",
+      "required": true,
+      "raw": "2026-1042",
+      "page": 1,
+      "wrong": [
+        "2026-1024",
+        "2025-1042"
+      ]
+    },
+    "invoice_date": {
+      "type": "date",
+      "description": "Invoice issue date",
+      "required": true,
+      "raw": "03/10/2026",
+      "page": 1,
+      "wrong": [
+        "10/03/2026",
+        "03/10/2025"
+      ]
+    },
+    "total": {
+      "type": "number",
+      "description": "Grand total including tax (TTC)",
+      "required": true,
+      "raw": "1.200,00 EUR",
+      "page": 1,
+      "wrong": [
+        "1.000,00 EUR",
+        "200,00 EUR",
+        "1.020,00 EUR"
+      ]
+    },
+    "customer_name": {
+      "type": "string",
+      "description": "Name of the customer being billed",
+      "required": true,
+      "raw": "Dupont SAS",
+      "page": 1,
+      "wrong": [
+        "ACME SARL"
+      ]
+    }
+  }
+}
