@@ -94,3 +94,9 @@ def test_render_page_and_crop_are_png_and_crop_is_smaller():
 def test_page_out_of_range_raises():
     with pytest.raises(PdfError, match="out of range"):
         Document(build_pdf(INVOICE)).render_page(5)
+
+
+def test_page_text():
+    doc = Document(build_pdf(TWO_PAGES))
+    assert "Total TTC: 1.200,00 EUR" in doc.page_text(2)
+    assert "Total" not in doc.page_text(1)

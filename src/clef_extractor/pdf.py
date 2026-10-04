@@ -54,7 +54,10 @@ class Document:
         return isinstance(page, int) and not isinstance(page, bool) and 1 <= page <= self.page_count
 
     def has_text(self, page: int) -> bool:
-        return bool(self._page(page).get_text().strip())
+        return bool(self.page_text(page).strip())
+
+    def page_text(self, page: int) -> str:
+        return self._page(page).get_text()
 
     def locate(self, needle: str | None, hint_page: int | None = None) -> Location | None:
         """Find needle (whitespace-normalized) on the hint page first, then every other page."""
