@@ -79,12 +79,14 @@ def test_extraction_schema_is_strict():
     ("-42,10", -42.10),
     ("(15.00)", -15.0),
     ("200", 200.0),
+    ("5,127.60-", -5127.6),
+    ("USD 1,000.00", 1000.0),
 ])
 def test_normalize_number(raw, expected):
     assert normalize("number", raw) == pytest.approx(expected)
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "1.2.3", "EUR"])
+@pytest.mark.parametrize("raw", ["abc", "", "1.2.3", "EUR", "2 x 600", "12-34", "1e5", "N° 4242"])
 def test_normalize_number_rejects(raw):
     with pytest.raises(ValueError):
         normalize("number", raw)
@@ -100,6 +102,11 @@ def test_normalize_number_rejects(raw):
     ("14 février 1990", "1990-02-14"),
     ("03/10/26", "2026-10-03"),
     ("2026-09-28 08:14", "2026-09-28"),
+    ("2026/10/03", "2026-10-03"),
+    ("2026/10/3", "2026-10-03"),
+    ("2026.10.03", "2026-10-03"),
+    ("20261003", "2026-10-03"),
+    ("12:30 2026-10-03", "2026-10-03"),
 ])
 def test_normalize_date(raw, expected):
     assert normalize("date", raw) == expected

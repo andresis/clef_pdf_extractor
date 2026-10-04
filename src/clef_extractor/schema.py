@@ -87,14 +87,17 @@ def extraction_json_schema(fields: list[Field]) -> dict:
 
 
 _THOUSANDS = re.compile(r"^\d{1,3}([.,]\d{3})+$")
+_CURRENCY = re.compile(r"[$€£¥%]|\b[A-Za-z]{3}\b")
+# After removing currency marks: optional sign or parentheses, digits with grouping, optional trailing minus.
+_NUMBER_SHAPE = re.compile(r"^\(?[-+]?\s*\d[\d.,'\s\u00a0\u202f]*\)?\s*-?$")
 
 
 def _normalize_number(raw: str) -> float:
-    text = raw.strip()
-    negative = text.startswith("-") or (text.startswith("(") and text.endswith(")"))
-    s = re.sub(r"[^\d.,]", "", text)
-    if not re.search(r"\d", s):
+    text = _CURRENCY.sub("", raw).strip()
+    if not _NUMBER_SHAPE.match(text):
         raise ValueError(f"not a number: {raw!r}")
+    negative = text.startswith("-") or text.endswith("-") or (text.startswith("(") and text.endswith(")"))
+    s = re.sub(r"[^\d.,]", "", text)
     if "," in s and "." in s:
         decimal = "," if s.rfind(",") > s.rfind(".") else "."
         thousands = "." if decimal == "," else ","
@@ -123,7 +126,7 @@ _FR_MONTHS = {
     "décembre": "december", "decembre": "december",
 }
 _HAS_YEAR = re.compile(r"\d{4}|\b\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2}\b")
-_ISO_START = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}\b")
+_YEAR_FIRST = re.compile(r"(?<!\d)\d{4}[-/.]?\d{1,2}[-/.]?\d{1,2}(?!\d)")
 
 
 def _normalize_date(raw: str) -> str:
@@ -132,7 +135,7 @@ def _normalize_date(raw: str) -> str:
         raise ValueError(f"not a date: {raw!r}")
     for fr, en in _FR_MONTHS.items():
         s = re.sub(rf"\b{fr}\b", en, s)
-    iso = bool(_ISO_START.match(s))
+    iso = bool(_YEAR_FIRST.search(s))  # 2026-10-03, 2026/10/03, 2026.10.03, 20261003
     try:
         # Parse with two different defaults: if they disagree, a component was missing and got invented.
         a = dateparser.parse(s, dayfirst=not iso, yearfirst=iso, default=datetime(2000, 1, 1))
