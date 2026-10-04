@@ -100,3 +100,22 @@ def test_page_text():
     doc = Document(build_pdf(TWO_PAGES))
     assert "Total TTC: 1.200,00 EUR" in doc.page_text(2)
     assert "Total" not in doc.page_text(1)
+
+
+def test_pymupdf_errors_mid_run_become_pdf_error(monkeypatch):
+    doc = Document(build_pdf(INVOICE))
+
+    class BrokenPage:
+        def get_text(self):
+            raise RuntimeError("damaged content stream")
+
+        def get_pixmap(self, **kw):
+            raise RuntimeError("damaged content stream")
+
+        def search_for(self, needle):
+            raise RuntimeError("damaged content stream")
+
+    monkeypatch.setattr(doc, "_page", lambda page: BrokenPage())
+    for call in (lambda: doc.page_text(1), lambda: doc.render_page(1), lambda: doc.locate("Total")):
+        with pytest.raises(PdfError, match="damaged"):
+            call()

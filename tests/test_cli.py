@@ -120,3 +120,37 @@ def test_threshold_out_of_range_rejected(files):
     pdf, fields = files
     with pytest.raises(SystemExit):
         cli.main([str(pdf), "--fields", str(fields), "--threshold", "2"])
+
+
+def test_output_dir_missing_exits_1_before_extraction(monkeypatch, capsys, files, tmp_path):
+    pdf, fields = files
+    extractor = FakeExtractor(CANDS)
+    setup(monkeypatch, FakeClef(0.95), extractor)
+    assert cli.main([str(pdf), "--fields", str(fields), "-o", str(tmp_path / "nope" / "out.json")]) == 1
+    assert extractor.called is False
+    assert "output directory" in capsys.readouterr().err
+
+
+def test_keyboard_interrupt_exits_130(monkeypatch, capsys, files):
+    pdf, fields = files
+
+    class Interrupting(FakeExtractor):
+        def extract(self, doc, fields):
+            raise KeyboardInterrupt
+
+    setup(monkeypatch, FakeClef(0.95), Interrupting(CANDS))
+    assert cli.main([str(pdf), "--fields", str(fields)]) == 130
+    assert "interrupted" in capsys.readouterr().err
+
+
+def test_pdf_error_mid_run_exits_1(monkeypatch, capsys, files):
+    pdf, fields = files
+    from clef_extractor.pdf import PdfError
+
+    class Broken(FakeExtractor):
+        def extract(self, doc, fields):
+            raise PdfError("inv.pdf: cannot render page 1: damaged")
+
+    setup(monkeypatch, FakeClef(0.95), Broken(CANDS))
+    assert cli.main([str(pdf), "--fields", str(fields)]) == 1
+    assert "damaged" in capsys.readouterr().err

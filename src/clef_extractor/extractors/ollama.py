@@ -13,6 +13,7 @@ from ..schema import Field, extraction_json_schema
 from .base import INSTRUCTIONS, Candidate, ExtractionError, fields_prompt, to_candidate
 
 DEFAULT_MODEL = "gemma4:31b-cloud"
+MAX_IMAGE_PAGES = 20  # above this, only pages without a text layer are sent as images
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
@@ -47,8 +48,10 @@ class OllamaExtractor:
             pages.append(f"=== Page {p} ===\n{text}")
         user: dict = {"role": "user", "content": "\n\n".join(pages) + "\n\n" + fields_prompt(fields)}
         if self.has_vision():
-            user["images"] = [base64.b64encode(doc.render_page(p)).decode()
-                              for p in range(1, doc.page_count + 1)]
+            image_pages = range(1, doc.page_count + 1)
+            if doc.page_count > MAX_IMAGE_PAGES:
+                image_pages = [p for p in image_pages if not doc.has_text(p)]
+            user["images"] = [base64.b64encode(doc.render_page(p)).decode() for p in image_pages]
         reply = self._post("/api/chat", {
             "model": self.model,
             "stream": False,
@@ -57,7 +60,8 @@ class OllamaExtractor:
             "format": extraction_json_schema(fields),
             "messages": [{"role": "system", "content": INSTRUCTIONS}, user],
         })
-        data = _parse(reply.get("message", {}).get("content", ""))
+        message = reply.get("message")
+        data = _parse(message.get("content", "") if isinstance(message, dict) else "")
         return {f.name: to_candidate(f.name, data.get(f.name)) for f in fields}
 
     def _post(self, path: str, body: dict) -> dict:
@@ -68,6 +72,8 @@ class OllamaExtractor:
         try:
             data = r.json()
         except ValueError:
+            data = {}
+        if not isinstance(data, dict):
             data = {}
         if r.status_code != 200:
             raise ExtractionError(f"Ollama error ({r.status_code}) for {self.model}: {data.get('error', r.text)}")

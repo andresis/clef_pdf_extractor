@@ -114,3 +114,26 @@ def test_live_gemma_digital_and_scanned():
         result = OllamaExtractor().extract(Document(build_pdf(pages, image_only=image_only)), fields)
         assert result["total"].raw and "1.200,00" in result["total"].raw
         assert result["invoice_date"].raw == "03/10/2026"
+
+
+def test_null_message_raises_extraction_error():
+    def handler(request):
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": []})
+        return httpx.Response(200, json={"message": None})
+
+    with pytest.raises(ExtractionError, match="valid JSON"):
+        OllamaExtractor(transport=httpx.MockTransport(handler)).extract(DOC, FIELDS)
+
+
+def test_error_with_list_body_raises_extraction_error():
+    handler = lambda request: httpx.Response(500, json=["boom"])
+    with pytest.raises(ExtractionError, match="500"):
+        OllamaExtractor(transport=httpx.MockTransport(handler)).extract(DOC, FIELDS)
+
+
+def test_large_documents_send_images_only_for_pages_without_text():
+    pages = [[(f"Page {i}", 11)] for i in range(1, 21)] + [[]]  # 21 pages, last one has no text layer
+    fake = FakeOllama(json.dumps(PAYLOAD))
+    extractor(fake).extract(Document(build_pdf(pages)), FIELDS)
+    assert len(fake.chat_body["messages"][1]["images"]) == 1

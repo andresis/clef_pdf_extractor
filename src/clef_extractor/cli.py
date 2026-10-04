@@ -61,6 +61,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.output and not Path(args.output).resolve().parent.is_dir():
+        print(f"error: output directory does not exist: {Path(args.output).parent}", file=sys.stderr)
+        return 1
     try:
         fields = load_fields(args.fields)
         doc = Document.from_path(args.pdf)
@@ -71,9 +74,17 @@ def main(argv: list[str] | None = None) -> int:
     except (SchemaError, PdfError, ClefError, ExtractionError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
     text = json.dumps(result, indent=2, ensure_ascii=False)
     if args.output:
-        Path(args.output).write_text(text + "\n", encoding="utf-8")
+        try:
+            Path(args.output).write_text(text + "\n", encoding="utf-8")
+        except OSError as e:
+            print(text)  # don't lose the reviewed result
+            print(f"error: cannot write {args.output}: {e}", file=sys.stderr)
+            return 1
     else:
         print(text)
     return 0 if result["complete"] else 2

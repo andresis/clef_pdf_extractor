@@ -24,7 +24,10 @@ class ClefClient:
             r.raise_for_status()
         except httpx.HTTPError as e:
             raise ClefError(f"Ollama not reachable at {self._http.base_url}: {e}") from e
-        names = {m.get("name") for m in r.json().get("models", [])}
+        try:
+            names = {m.get("name") for m in r.json().get("models", [])}
+        except (ValueError, AttributeError) as e:
+            raise ClefError(f"unexpected response from Ollama at {self._http.base_url}/api/tags") from e
         if self.model not in names:
             raise ClefError(f"model {self.model} is not installed; run: ollama pull {self.model}")
 
@@ -44,6 +47,8 @@ class ClefClient:
         try:
             data = r.json()
         except ValueError:
+            data = {}
+        if not isinstance(data, dict):
             data = {}
         if r.status_code != 200:
             raise ClefError(f"clef-flash error ({r.status_code}): {data.get('error', r.text)}")

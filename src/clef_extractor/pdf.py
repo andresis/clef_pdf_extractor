@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,7 +58,8 @@ class Document:
         return bool(self.page_text(page).strip())
 
     def page_text(self, page: int) -> str:
-        return self._page(page).get_text()
+        with self._guard(f"read text of page {page}"):
+            return self._page(page).get_text()
 
     def locate(self, needle: str | None, hint_page: int | None = None) -> Location | None:
         """Find needle (whitespace-normalized) on the hint page first, then every other page."""
@@ -69,22 +71,35 @@ class Document:
             order.remove(hint_page)
             order.insert(0, hint_page)
         for page in order:
-            hits = self._page(page).search_for(needle)
+            with self._guard(f"search page {page}"):
+                hits = self._page(page).search_for(needle)
             if hits:
                 r = hits[0]
                 return Location(page, (r.x0, r.y0, r.x1, r.y1))
         return None
 
     def render_page(self, page: int, dpi: int = 100) -> bytes:
-        return self._page(page).get_pixmap(dpi=dpi).tobytes("png")
+        with self._guard(f"render page {page}"):
+            return self._page(page).get_pixmap(dpi=dpi).tobytes("png")
 
     def render_crop(self, page: int, bbox: tuple[float, float, float, float],
                     dpi: int = 150, margin: float = CROP_MARGIN) -> bytes:
         """Full page width, bbox ± margin points vertically."""
-        pg = self._page(page)
-        r = pg.rect
-        clip = pymupdf.Rect(r.x0, max(r.y0, bbox[1] - margin), r.x1, min(r.y1, bbox[3] + margin))
-        return pg.get_pixmap(dpi=dpi, clip=clip).tobytes("png")
+        with self._guard(f"render page {page}"):
+            pg = self._page(page)
+            r = pg.rect
+            clip = pymupdf.Rect(r.x0, max(r.y0, bbox[1] - margin), r.x1, min(r.y1, bbox[3] + margin))
+            return pg.get_pixmap(dpi=dpi, clip=clip).tobytes("png")
+
+    @contextmanager
+    def _guard(self, action: str):
+        """Turn pymupdf failures on damaged pages into PdfError."""
+        try:
+            yield
+        except PdfError:
+            raise
+        except Exception as e:
+            raise PdfError(f"{self.name}: cannot {action}: {e}") from e
 
     def _page(self, page: int):
         if not self.valid_page(page):

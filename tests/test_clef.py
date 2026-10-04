@@ -93,3 +93,15 @@ def test_live_smoke():
         {"right": "Is the total 121.00?", "wrong": "Is the total 112.00?"},
     )
     assert scores["right"] > 0.8 and scores["wrong"] < 0.1
+
+
+def test_health_non_json_body_raises_clef_error():
+    handler = lambda request: httpx.Response(200, text="<html>proxy</html>")
+    with pytest.raises(ClefError, match="unexpected"):
+        client(handler).health()
+
+
+def test_ask_error_with_list_body_raises_clef_error():
+    handler = lambda request: httpx.Response(500, json=["boom"])
+    with pytest.raises(ClefError, match="500"):
+        client(handler).ask("s", {"q": "Q"})
