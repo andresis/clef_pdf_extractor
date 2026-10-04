@@ -34,3 +34,11 @@ Default threshold left at 0.5 pending a decision.
 ### End-to-end (pytest -m e2e)
 2/3 pass. us_invoice: gemma returned `#INV-7781` (printed "INVOICE #INV-7781"); clef accepted it
 (the text is on the page), ground truth is `INV-7781`. Not weakened — needs a decision.
+
+### Post-review (2026-10-04)
+Review fixes applied: year-first dates, strict number shape, clean errors (-o, Ctrl-C, non-JSON replies,
+damaged pages), page-image cap >20 pages.
+Applied reviewer #8 (user decision): a value absent from the text layer of a digital page scores 0 without a clef call.
+Calibration after: false accepts 1/52 at 0.5 (only us_receipt_scanned `4224`, 0.861 — scans rely on clef alone),
+0/52 at 0.9; false flags 0/26 at every threshold. Default threshold still 0.5 (true values ≥ 0.937).
+e2e: 3/4 pass; open: `#INV-7781` vs `INV-7781`.

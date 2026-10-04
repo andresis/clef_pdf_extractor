@@ -54,10 +54,11 @@ class Validator:
         if loc:
             result.page, result.located = loc.page, True
             images = [self.doc.render_crop(loc.page, loc.bbox), self.doc.render_page(loc.page)]
-        elif self.doc.valid_page(cand.page):
-            images = [self.doc.render_page(cand.page)]
+        elif self.doc.valid_page(cand.page) and not self.doc.has_text(cand.page):
+            images = [self.doc.render_page(cand.page)]  # scanned page: only clef can check it
         else:
-            result.page = None
+            # Not in the text layer of a digital page (or no usable page): score stays 0, the gate decides.
+            result.page = cand.page if self.doc.valid_page(cand.page) else None
             return result
 
         result.scores = self.clef.ask(_state(field, cand.raw, result.page), _questions(field, cand.raw), images)

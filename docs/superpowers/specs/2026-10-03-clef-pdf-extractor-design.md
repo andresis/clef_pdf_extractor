@@ -103,13 +103,13 @@ Candidate(name, raw: str | None, value, page: int | None, quote: str | None)
 
 ### 4.2 Locate evidence (no model)
 
-`pdf.locate(quote, hint_page)`: search the hint page first, then all pages, using pymupdf `search_for`. If found → actual page + bbox (overrides the extractor's page). If not found (scanned PDF or paraphrased quote) → fall back to the extractor's page with no bbox. If that page is invalid → field fails validation.
+`pdf.locate(quote, hint_page)`: search the hint page first, then all pages, using pymupdf `search_for`. If found → actual page + bbox (overrides the extractor's page). If not found and the extractor's page has **no text layer** (scan) → validate the full page image with clef. If not found and the page **has** a text layer → the value is printed nowhere in the document: score 0 without calling clef, so the gate decides (added 2026-10-04 after calibration: transposed digits such as `5.127,60` for `5.172,60` scored 0.92 with clef). If the page is invalid → score 0.
 
 ### 4.3 Validation (clef-flash)
 
 Images:
 - **Located:** crop of the page around bbox (full page width, ±150pt vertically, 150 dpi) **plus** full page downscaled (100 dpi) so the model sees context (total vs subtotal).
-- **Not located:** full page at 100 dpi.
+- **Not located, scanned page:** full page at 100 dpi. (Not located on a page with text → no clef call, score 0; see §4.2.)
 
 Request per field (fields sharing identical images may be batched into one request):
 

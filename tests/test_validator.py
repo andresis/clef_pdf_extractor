@@ -48,11 +48,24 @@ def test_falls_back_to_raw_when_quote_paraphrased():
     assert len(clef.calls[0][2]) == 2
 
 
-def test_not_located_uses_full_page_from_extractor():
+SCANNED = Document(build_pdf([[("Total TTC: 1.200,00 EUR", 11)]], image_only=True))
+
+
+def test_not_located_on_scanned_page_uses_full_page_from_extractor():
     clef = FakeClef()
-    r = Validator(clef, DOC).validate(TOTAL, Candidate("total", "9.999,99 EUR", 2, None))
-    assert not r.located and r.page == 2
+    r = Validator(clef, SCANNED).validate(TOTAL, Candidate("total", "1.200,00 EUR", 1, "Total TTC: 1.200,00 EUR"))
+    assert not r.located and r.page == 1
+    assert r.score == 0.7
     assert len(clef.calls[0][2]) == 1
+
+
+def test_value_absent_from_digital_text_scores_zero_without_clef():
+    # Calibration: transposed digits (5.127,60 for 5.172,60) scored 0.92 with clef, yet are printed nowhere.
+    clef = FakeClef(shown=0.95, semantic=0.95)
+    r = Validator(clef, DOC).validate(TOTAL, Candidate("total", "1.020,00 EUR", 2, "Total TTC: 1.020,00 EUR"))
+    assert not r.located and r.page == 2
+    assert r.score == 0.0 and r.scores == {}
+    assert clef.calls == []
 
 
 @pytest.mark.parametrize("page", [None, 0, 7])
