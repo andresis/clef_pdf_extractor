@@ -8,7 +8,7 @@ Plan: docs/superpowers/plans/2026-10-03-clef-pdf-extractor.md
 - [x] Task 4: Ollama cloud extractor (OpenAI commented out)
 - [x] Task 5: Validator
 - [x] Task 6: Gate + review CLI
-- [ ] Task 7: CLI wiring + README
+- [x] Task 7: CLI wiring + README
 - [ ] Task 8: Calibration set + script
 
 ## Review
