@@ -1,0 +1,79 @@
+sample,field,raw,truthful,score,located
+fr_form,last_name,Martin,True,0.9803,True
+fr_form,last_name,Claire,False,0.0237,True
+fr_form,birth_date,14/02/1990,True,0.9728,True
+fr_form,birth_date,14/02/1991,False,0.0000,False
+fr_form,birth_date,12/04/1990,False,0.0000,False
+fr_form,postal_code,69003,True,0.9724,True
+fr_form,postal_code,69300,False,0.0000,False
+fr_form,postal_code,69030,False,0.0000,False
+fr_invoice_dense,invoice_date,15/09/2026,True,0.9750,True
+fr_invoice_dense,invoice_date,09/15/2025,False,0.0000,False
+fr_invoice_dense,invoice_date,15/09/2025,False,0.0000,False
+fr_invoice_dense,total,"5.172,60 EUR",True,0.9375,True
+fr_invoice_dense,total,"4.310,50 EUR",False,0.0372,True
+fr_invoice_dense,total,"862,10 EUR",False,0.0398,True
+fr_invoice_dense,total,"5.127,60 EUR",False,0.0000,False
+fr_invoice_dense,vat_amount,"862,10 EUR",True,0.9426,True
+fr_invoice_dense,vat_amount,"5.172,60 EUR",False,0.0373,True
+fr_invoice_dense,vat_amount,"826,10 EUR",False,0.0000,False
+fr_invoice_scanned,invoice_number,2026-1042,True,0.9766,False
+fr_invoice_scanned,invoice_number,2026-1024,False,0.0203,False
+fr_invoice_scanned,invoice_number,2025-1042,False,0.0254,False
+fr_invoice_scanned,invoice_date,03/10/2026,True,0.9766,False
+fr_invoice_scanned,invoice_date,10/03/2026,False,0.4192,False
+fr_invoice_scanned,invoice_date,03/10/2025,False,0.0272,False
+fr_invoice_scanned,total,"1.200,00 EUR",True,0.9700,False
+fr_invoice_scanned,total,"1.000,00 EUR",False,0.0146,False
+fr_invoice_scanned,total,"200,00 EUR",False,0.0162,False
+fr_invoice_scanned,total,"1.020,00 EUR",False,0.0179,False
+fr_invoice_scanned,customer_name,Dupont SAS,True,0.9726,False
+fr_invoice_scanned,customer_name,ACME SARL,False,0.0939,False
+fr_invoice_sparse,invoice_number,2026-1042,True,0.9640,True
+fr_invoice_sparse,invoice_number,2026-1024,False,0.0000,False
+fr_invoice_sparse,invoice_number,2025-1042,False,0.0000,False
+fr_invoice_sparse,invoice_date,03/10/2026,True,0.9619,True
+fr_invoice_sparse,invoice_date,10/03/2026,False,0.0000,False
+fr_invoice_sparse,invoice_date,03/10/2025,False,0.0000,False
+fr_invoice_sparse,total,"1.200,00 EUR",True,0.9551,True
+fr_invoice_sparse,total,"1.000,00 EUR",False,0.0128,True
+fr_invoice_sparse,total,"200,00 EUR",False,0.0165,True
+fr_invoice_sparse,total,"1.020,00 EUR",False,0.0000,False
+fr_invoice_sparse,customer_name,Dupont SAS,True,0.9505,True
+fr_invoice_sparse,customer_name,ACME SARL,False,0.0742,True
+two_page_invoice,invoice_date,2026-08-01,True,0.9808,True
+two_page_invoice,invoice_date,2026-01-08,False,0.0000,False
+two_page_invoice,total,"$9,900.00",True,0.9654,True
+two_page_invoice,total,"$9,090.00",False,0.0000,False
+two_page_invoice,total,$150.00,False,0.0526,True
+us_invoice,invoice_number,INV-7781,True,0.9809,True
+us_invoice,invoice_number,INV-7718,False,0.0000,False
+us_invoice,due_date,"November 2, 2026",True,0.9700,True
+us_invoice,due_date,"October 3, 2026",False,0.0239,True
+us_invoice,due_date,"November 20, 2026",False,0.0000,False
+us_invoice,total,"$2,652.13",True,0.9698,True
+us_invoice,total,"$2,450.00",False,0.0151,True
+us_invoice,total,$202.13,False,0.0198,True
+us_invoice,total,"$2,625.13",False,0.0000,False
+us_invoice,customer_name,Initech LLC,True,0.9642,True
+us_invoice,customer_name,Globex Inc.,False,0.0579,True
+us_receipt,date,2026-09-28,True,0.9792,True
+us_receipt,date,2026-09-29,False,0.0000,False
+us_receipt,date,2026-08-28,False,0.0000,False
+us_receipt,total,12.45,True,0.9601,True
+us_receipt,total,11.50,False,0.0249,True
+us_receipt,total,0.95,False,0.0208,True
+us_receipt,total,12.54,False,0.0000,False
+us_receipt,card_last4,4242,True,0.9598,True
+us_receipt,card_last4,4224,False,0.0000,False
+us_receipt,card_last4,0042,False,0.0275,True
+us_receipt_scanned,date,2026-09-28,True,0.9742,False
+us_receipt_scanned,date,2026-09-29,False,0.0194,False
+us_receipt_scanned,date,2026-08-28,False,0.0217,False
+us_receipt_scanned,total,12.45,True,0.9679,False
+us_receipt_scanned,total,11.50,False,0.0256,False
+us_receipt_scanned,total,0.95,False,0.0219,False
+us_receipt_scanned,total,12.54,False,0.0343,False
+us_receipt_scanned,card_last4,4242,True,0.9656,False
+us_receipt_scanned,card_last4,4224,False,0.8610,False
+us_receipt_scanned,card_last4,0042,False,0.0472,False

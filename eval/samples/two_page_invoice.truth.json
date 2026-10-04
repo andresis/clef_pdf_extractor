@@ -1,0 +1,26 @@
+{
+  "pdf": "two_page_invoice.pdf",
+  "fields": {
+    "invoice_date": {
+      "type": "date",
+      "description": "Invoice issue date",
+      "required": true,
+      "raw": "2026-08-01",
+      "page": 1,
+      "wrong": [
+        "2026-01-08"
+      ]
+    },
+    "total": {
+      "type": "number",
+      "description": "Grand total",
+      "required": true,
+      "raw": "$9,900.00",
+      "page": 2,
+      "wrong": [
+        "$9,090.00",
+        "$150.00"
+      ]
+    }
+  }
+}

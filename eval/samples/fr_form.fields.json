@@ -1,0 +1,17 @@
+{
+  "last_name": {
+    "type": "string",
+    "description": "Family name (nom)",
+    "required": true
+  },
+  "birth_date": {
+    "type": "date",
+    "description": "Date of birth",
+    "required": true
+  },
+  "postal_code": {
+    "type": "string",
+    "description": "Postal code",
+    "required": true
+  }
+}

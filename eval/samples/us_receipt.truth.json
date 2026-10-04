@@ -1,0 +1,39 @@
+{
+  "pdf": "us_receipt.pdf",
+  "fields": {
+    "date": {
+      "type": "date",
+      "description": "Purchase date",
+      "required": true,
+      "raw": "2026-09-28",
+      "page": 1,
+      "wrong": [
+        "2026-09-29",
+        "2026-08-28"
+      ]
+    },
+    "total": {
+      "type": "number",
+      "description": "Total paid",
+      "required": true,
+      "raw": "12.45",
+      "page": 1,
+      "wrong": [
+        "11.50",
+        "0.95",
+        "12.54"
+      ]
+    },
+    "card_last4": {
+      "type": "string",
+      "description": "Last 4 digits of the payment card",
+      "required": true,
+      "raw": "4242",
+      "page": 1,
+      "wrong": [
+        "4224",
+        "0042"
+      ]
+    }
+  }
+}

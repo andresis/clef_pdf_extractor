@@ -1,0 +1,39 @@
+{
+  "pdf": "fr_invoice_dense.pdf",
+  "fields": {
+    "invoice_date": {
+      "type": "date",
+      "description": "Invoice issue date",
+      "required": true,
+      "raw": "15/09/2026",
+      "page": 1,
+      "wrong": [
+        "09/15/2025",
+        "15/09/2025"
+      ]
+    },
+    "total": {
+      "type": "number",
+      "description": "Grand total including tax (TTC)",
+      "required": true,
+      "raw": "5.172,60 EUR",
+      "page": 1,
+      "wrong": [
+        "4.310,50 EUR",
+        "862,10 EUR",
+        "5.127,60 EUR"
+      ]
+    },
+    "vat_amount": {
+      "type": "number",
+      "description": "VAT amount (TVA)",
+      "required": true,
+      "raw": "862,10 EUR",
+      "page": 1,
+      "wrong": [
+        "5.172,60 EUR",
+        "826,10 EUR"
+      ]
+    }
+  }
+}
