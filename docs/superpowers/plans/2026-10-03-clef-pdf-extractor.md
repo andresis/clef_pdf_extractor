@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A CLI that extracts per-request fields from any PDF with OpenAI GPT-6.1 Sol, validates every value against the rendered page with local clef-flash:9b, and asks the user about any required field that fails.
+**Goal:** A CLI that extracts per-request fields from any PDF with an Ollama cloud model (default `gemma4:31b-cloud`), validates every value against the rendered page with local clef-flash:9b, and asks the user about any required field that fails.
 
-**Architecture:** `schema` (field defs + normalization) → `extractors/openai` (Responses API, PDF `input_file`, strict JSON schema) → `pdf` (pymupdf: locate the quoted evidence, render crop + page) → `validator` (clef-flash `noul` questions, score = min) → `gate` + `review_cli` (strict gate, interactive prompt) → `cli` (JSON output, exit codes). Every external service sits behind a small client object so units are tested with fakes; live services are behind pytest markers.
+**Architecture:** `schema` (field defs + normalization) → `extractors/ollama` (page text + page images, JSON schema `format`, lenient parsing) → `pdf` (pymupdf: locate the quoted evidence, render crop + page) → `validator` (clef-flash `noul` questions, score = min) → `gate` + `review_cli` (strict gate, interactive prompt) → `cli` (JSON output, exit codes). Every external service sits behind a small client object so units are tested with fakes; live services are behind pytest markers.
 
-**Tech Stack:** Python ≥3.11, uv, pymupdf, httpx, openai (Responses API), python-dateutil, pytest.
+**Tech Stack:** Python ≥3.11, uv, pymupdf, httpx (Ollama + clef-flash), python-dateutil, pytest. (OpenAI backend written but commented out.)
 
 **Spec:** `docs/superpowers/specs/2026-10-03-clef-pdf-extractor-design.md`
 
@@ -14,20 +14,21 @@
 - `Candidate` carries `raw/page/quote` only; normalization to `value` and the type check happen in the validator (one place), and `FieldResult` holds the `value`.
 - One clef-flash request per field (the spec's optional batching is skipped — YAGNI).
 - The console command is `clef-extract` (avoids clashing with generic `extract` binaries); `uv run clef-extract …`.
+- **Extractor switched to Ollama `gemma4:31b-cloud`** (user decision 2026-10-04; `glm-5.3:cloud` and `deepseek-v4.1-flash:cloud` need Ollama Pro). The `Extractor` protocol takes a `Document` instead of raw bytes, because Ollama needs page text/images rather than a PDF file.
 
 ## Global Constraints
 
 - Python ≥ 3.11, uv-managed, `src/` layout, package `clef_extractor`.
 - Validator: model `clef-flash:9b` at `http://localhost:11434`, endpoint `POST /v1/systemone`, `noul` questions only.
-- Extractor: OpenAI Responses API, default model `gpt-6.1-sol` (override `--model` / `OPENAI_MODEL`), `reasoning: {"effort": "low"}`, strict `json_schema` via `text.format`, auth `OPENAI_API_KEY`.
+- Extractor: Ollama `POST /api/chat`, default model `gemma4:31b-cloud` (override `--model` / `EXTRACT_MODEL`), `think: false`, `temperature: 0`, JSON schema in `format`; page images sent only to models with the `vision` capability. OpenAI code stays in `extractors/openai.py`, commented out.
 - Field types: `string`, `number`, `date` only (scalars). Field names match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`.
 - Score = `min(shown, semantic)`; pass iff `score >= threshold`; default threshold `0.5`.
 - Images: located → crop (full page width, ±150pt, 150 dpi) + full page at 100 dpi; not located → full page at 100 dpi.
 - PDF limit 50 MB; encrypted / unreadable PDFs rejected up front.
 - Page numbers are 1-based everywhere.
-- clef health check runs before any OpenAI request.
+- clef health check runs before any extractor request.
 - Exit codes: 0 complete, 2 a required field skipped, 1 error.
-- Default `pytest` run makes no network calls; live tests use markers `clef` and `e2e`.
+- Default `pytest` run makes no network calls; live tests use markers `clef` (local clef-flash) and `e2e` (Ollama cloud extractor + clef-flash).
 
 ## Review Focus
 
@@ -50,8 +51,9 @@ src/clef_extractor/_pdfgen.py          # Task 2 — synthetic PDF builder (tests
 src/clef_extractor/pdf.py              # Task 2 — Document, Location, PdfError
 src/clef_extractor/clef.py             # Task 3 — ClefClient, ClefError
 src/clef_extractor/extractors/__init__.py  # Task 4
-src/clef_extractor/extractors/base.py      # Task 4 — Candidate, Extractor, ExtractionError
-src/clef_extractor/extractors/openai.py    # Task 4 — OpenAIExtractor
+src/clef_extractor/extractors/base.py      # Task 4 — Candidate, Extractor, ExtractionError, shared prompt
+src/clef_extractor/extractors/ollama.py    # Task 4 — OllamaExtractor (default)
+src/clef_extractor/extractors/openai.py    # Task 4 — OpenAIExtractor, commented out
 src/clef_extractor/validator.py        # Task 5 — FieldResult, Validator
 src/clef_extractor/gate.py             # Task 6 — Decision, apply_gate
 src/clef_extractor/review_cli.py       # Task 6 — CliReviewer
@@ -60,7 +62,7 @@ README.md                              # Task 7
 src/clef_extractor/calibration.py      # Task 8 — Trial, summarize, recommend
 eval/make_samples.py                   # Task 8
 eval/calibrate.py                      # Task 8
-tests/test_schema.py  tests/test_pdf.py  tests/test_clef.py  tests/test_openai_extractor.py
+tests/test_schema.py  tests/test_pdf.py  tests/test_clef.py  tests/test_ollama_extractor.py
 tests/test_validator.py  tests/test_validator_live.py  tests/test_gate.py  tests/test_review_cli.py
 tests/test_cli.py  tests/test_calibration.py  tests/test_e2e.py
 ```
@@ -91,12 +93,11 @@ tests/test_cli.py  tests/test_calibration.py  tests/test_e2e.py
 [project]
 name = "clef-extractor"
 version = "0.1.0"
-description = "Extract PDF fields with OpenAI GPT-Sol, validated locally by clef-flash"
+description = "Extract PDF fields with an LLM, validated locally by clef-flash"
 requires-python = ">=3.11"
 dependencies = [
     "pymupdf>=1.24",
     "httpx>=0.27",
-    "openai>=1.66",
     "python-dateutil>=2.9",
 ]
 
@@ -117,7 +118,7 @@ dev = ["pytest>=8"]
 testpaths = ["tests"]
 markers = [
     "clef: needs local Ollama with clef-flash:9b",
-    "e2e: needs OPENAI_API_KEY and Ollama; costs money",
+    "e2e: needs Ollama signed in (cloud extractor) and clef-flash:9b",
 ]
 addopts = "-m 'not clef and not e2e'"
 ```
@@ -146,7 +147,7 @@ Plan: docs/superpowers/plans/2026-10-03-clef-pdf-extractor.md
 - [ ] Task 1: Project scaffold + field schema
 - [ ] Task 2: PDF document (locate, render)
 - [ ] Task 3: clef-flash client
-- [ ] Task 4: OpenAI extractor (spike first)
+- [ ] Task 4: Ollama cloud extractor (OpenAI commented out)
 - [ ] Task 5: Validator
 - [ ] Task 6: Gate + review CLI
 - [ ] Task 7: CLI wiring + README
@@ -920,181 +921,171 @@ git commit -m "feat: clef-flash client with health check"
 
 ---
 
-### Task 4: OpenAI extractor (spike first)
+### Task 4: Ollama cloud extractor (OpenAI kept, commented out)
 
 **Files:**
-- Create: `src/clef_extractor/extractors/__init__.py`, `src/clef_extractor/extractors/base.py`, `src/clef_extractor/extractors/openai.py`
-- Throwaway (not committed): `scripts/spike_openai.py`
-- Test: `tests/test_openai_extractor.py`
+- Create: `src/clef_extractor/extractors/__init__.py`, `src/clef_extractor/extractors/base.py`, `src/clef_extractor/extractors/ollama.py`, `src/clef_extractor/extractors/openai.py` (fully commented out)
+- Test: `tests/test_ollama_extractor.py`
 
 **Interfaces:**
-- Consumes: `Field`, `extraction_json_schema` (Task 1); `build_pdf` (Task 2, spike only).
+- Consumes: `Field`, `extraction_json_schema` (Task 1); `Document` (`.page_count`, `.render_page`) and `build_pdf` (Task 2).
 - Produces:
   - `@dataclass(frozen=True) class Candidate: name: str; raw: str | None; page: int | None; quote: str | None`
   - `class ExtractionError(Exception)`
-  - `class Extractor(Protocol): name: str; def extract(self, pdf: bytes, filename: str, fields: list[Field]) -> dict[str, Candidate]`
-  - `DEFAULT_MODEL = "gpt-6.1-sol"`
-  - `class OpenAIExtractor(model: str = DEFAULT_MODEL, effort: str = "low", client=None)` with `.name == f"openai:{model}"`; constructing without `client` creates `openai.OpenAI()` (raises `openai.OpenAIError` if no API key). `extract` always returns one `Candidate` per requested field.
+  - `class Extractor(Protocol): name: str; def extract(self, doc: Document, fields: list[Field]) -> dict[str, Candidate]`
+  - `Document.page_text(page: int) -> str` — **add to `pdf.py` in this task** (returns `get_text()` of a 1-based page).
+  - `DEFAULT_MODEL = "gemma4:31b-cloud"`
+  - `class OllamaExtractor(model: str = DEFAULT_MODEL, base_url: str = "http://localhost:11434", timeout: float = 300.0, transport: httpx.BaseTransport | None = None)` with `.name == f"ollama:{model}"`, `.has_vision() -> bool`, `.extract(doc, fields) -> dict[str, Candidate]` (always one `Candidate` per field).
+  - Request: `POST /api/chat`, `stream: false`, `think: false`, `options: {temperature: 0}`, `format: extraction_json_schema(fields)`, system = `INSTRUCTIONS`, user content = every page's text under `=== Page N ===` headers (`(no text layer — see page image)` when empty) + the field list; `images` = every page rendered at 100 dpi, base64, **only if** the model reports the `vision` capability via `POST /api/show`.
+  - Lenient parsing (probe 2026-10-04: gemma4 ignored `format` and returned a fenced JSON *list* of `{"field": ..., "raw": ..., "page": ..., "quote": ...}`): strip ```` ``` ```` fences; accept either `{name: {...}}` or `[{"field": name, ...}]`.
 
-- [ ] **Step 1: Spike — confirm `input_file` + strict `json_schema` work together on `gpt-6.1-sol`**
+- [ ] **Step 1: Write the failing tests**
 
-This calls the real API (costs < $0.01). If `OPENAI_API_KEY` is not set, STOP and ask the user to export it.
-
-`scripts/spike_openai.py`:
-```python
-"""Throwaway spike: does gpt-6.1-sol accept a PDF input_file together with a strict json_schema?"""
-import base64
-import json
-import sys
-
-from openai import OpenAI
-
-from clef_extractor._pdfgen import build_pdf
-from clef_extractor.schema import Field, extraction_json_schema
-
-model = sys.argv[1] if len(sys.argv) > 1 else "gpt-6.1-sol"
-fields = [Field("total", "number", "Grand total including tax", True),
-          Field("invoice_date", "date", "Invoice issue date", True)]
-pdf = build_pdf([[("ACME SARL - FACTURE N° 2026-1042", 16), ("Date: 03/10/2026", 11),
-                  ("Sous-total HT: 1.000,00 EUR", 11, 300), ("TVA 20%: 200,00 EUR", 11, 300),
-                  ("Total TTC: 1.200,00 EUR", 11, 300)]])
-resp = OpenAI().responses.create(
-    model=model,
-    reasoning={"effort": "low"},
-    input=[{"role": "user", "content": [
-        {"type": "input_file", "filename": "spike.pdf",
-         "file_data": "data:application/pdf;base64," + base64.b64encode(pdf).decode()},
-        {"type": "input_text", "text": "Extract: total (grand total including tax), invoice_date. "
-                                       "raw exactly as printed, 1-based page, verbatim quote."},
-    ]}],
-    text={"format": {"type": "json_schema", "name": "extraction", "strict": True,
-                     "schema": extraction_json_schema(fields)}},
-)
-print(resp.status)
-print(json.dumps(json.loads(resp.output_text), indent=2, ensure_ascii=False))
-print(resp.usage)
-```
-
-Run: `uv run python scripts/spike_openai.py`
-Expected: `completed`, then JSON with `total.raw == "1.200,00 EUR"`, `total.page == 1`, `invoice_date.raw == "03/10/2026"`.
-
-Record the outcome under `## Review` in `tasks/todo.md` (status, the JSON, token usage). Then `rm -r scripts`.
-**If the call fails** (400 on `input_file`, or schema rejected): STOP, report the exact error to the user, and propose the fallback (send rendered page PNGs as `{"type": "input_image", "image_url": "data:image/png;base64,..."}` instead of the PDF). Do not continue to Step 2 without the user's decision.
-
-- [ ] **Step 2: Write the failing tests**
-
-`tests/test_openai_extractor.py`:
+`tests/test_ollama_extractor.py`:
 ```python
 import base64
 import json
-from types import SimpleNamespace
 
 import httpx
-import openai
 import pytest
 
+from clef_extractor._pdfgen import build_pdf
 from clef_extractor.extractors.base import Candidate, ExtractionError
-from clef_extractor.extractors.openai import OpenAIExtractor
+from clef_extractor.extractors.ollama import OllamaExtractor
+from clef_extractor.pdf import Document
 from clef_extractor.schema import Field, extraction_json_schema
 
 FIELDS = [Field("total", "number", "Grand total", True), Field("customer", "string", "Customer name", False)]
-PDF = b"%PDF-1.7 fake"
-
-
-class FakeResponses:
-    def __init__(self, response=None, error=None):
-        self.response, self.error, self.kwargs = response, error, None
-
-    def create(self, **kwargs):
-        self.kwargs = kwargs
-        if self.error:
-            raise self.error
-        return self.response
-
-
-def fake_client(response=None, error=None):
-    return SimpleNamespace(responses=FakeResponses(response, error))
-
-
-def ok(payload, output=()):
-    return SimpleNamespace(status="completed", output_text=json.dumps(payload),
-                           output=list(output), incomplete_details=None)
-
-
+DOC = Document(build_pdf([[("Total TTC: 1.200,00 EUR", 11)], []]), "inv.pdf")  # page 2 has no text
 PAYLOAD = {
     "total": {"raw": "1.200,00 EUR", "page": 1, "quote": "Total TTC: 1.200,00 EUR"},
     "customer": {"raw": None, "page": None, "quote": None},
 }
 
 
-def test_request_shape():
-    client = fake_client(ok(PAYLOAD))
-    OpenAIExtractor(client=client).extract(PDF, "inv.pdf", FIELDS)
-    kw = client.responses.kwargs
-    assert kw["model"] == "gpt-6.1-sol"
-    assert kw["reasoning"] == {"effort": "low"}
-    assert kw["text"]["format"] == {"type": "json_schema", "name": "extraction", "strict": True,
-                                    "schema": extraction_json_schema(FIELDS)}
-    assert kw["instructions"]
-    file_part, text_part = kw["input"][0]["content"]
-    assert file_part["type"] == "input_file" and file_part["filename"] == "inv.pdf"
-    prefix = "data:application/pdf;base64,"
-    assert file_part["file_data"].startswith(prefix)
-    assert base64.b64decode(file_part["file_data"][len(prefix):]) == PDF
-    assert text_part["type"] == "input_text"
-    assert "total" in text_part["text"] and "Grand total" in text_part["text"]
+class FakeOllama:
+    def __init__(self, content=None, capabilities=("completion", "vision"), status=200, error=None):
+        self.content, self.capabilities, self.status, self.error = content, list(capabilities), status, error
+        self.chat_body = None
+
+    def __call__(self, request):
+        if self.error:
+            raise self.error
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": self.capabilities})
+        self.chat_body = json.loads(request.content)
+        if self.status != 200:
+            return httpx.Response(self.status, json={"error": "This model is not in the Free plan"})
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": self.content}})
 
 
-def test_parses_candidates():
-    result = OpenAIExtractor(client=fake_client(ok(PAYLOAD))).extract(PDF, "inv.pdf", FIELDS)
+def extractor(fake, **kw):
+    return OllamaExtractor(transport=httpx.MockTransport(fake), **kw)
+
+
+def test_request_shape_with_vision():
+    fake = FakeOllama(json.dumps(PAYLOAD))
+    extractor(fake).extract(DOC, FIELDS)
+    body = fake.chat_body
+    assert body["model"] == "gemma4:31b-cloud"
+    assert body["stream"] is False and body["think"] is False
+    assert body["options"] == {"temperature": 0}
+    assert body["format"] == extraction_json_schema(FIELDS)
+    system, user = body["messages"]
+    assert system["role"] == "system" and "exactly as printed" in system["content"]
+    assert "=== Page 1 ===" in user["content"] and "Total TTC: 1.200,00 EUR" in user["content"]
+    assert "=== Page 2 ===\n(no text layer" in user["content"]
+    assert "- total (number, required): Grand total" in user["content"]
+    assert len(user["images"]) == 2
+    assert base64.b64decode(user["images"][0]).startswith(b"\x89PNG")
+
+
+def test_no_images_without_vision():
+    fake = FakeOllama(json.dumps(PAYLOAD), capabilities=("completion",))
+    extractor(fake).extract(DOC, FIELDS)
+    assert "images" not in fake.chat_body["messages"][1]
+
+
+def test_parses_object_form():
+    result = extractor(FakeOllama(json.dumps(PAYLOAD))).extract(DOC, FIELDS)
     assert result == {
         "total": Candidate("total", "1.200,00 EUR", 1, "Total TTC: 1.200,00 EUR"),
         "customer": Candidate("customer", None, None, None),
     }
 
 
+def test_parses_fenced_list_form():
+    content = '```json\n[{"field": "total", "raw": "1.200,00 EUR", "page": 1, "quote": "Total TTC: 1.200,00 EUR"}]\n```'
+    result = extractor(FakeOllama(content)).extract(DOC, FIELDS)
+    assert result["total"] == Candidate("total", "1.200,00 EUR", 1, "Total TTC: 1.200,00 EUR")
+    assert result["customer"] == Candidate("customer", None, None, None)
+
+
 def test_missing_and_malformed_fields_become_empty_candidates():
-    payload = {"total": {"raw": "  ", "page": True, "quote": 5}, "extra": {"raw": "x"}}
-    result = OpenAIExtractor(client=fake_client(ok(payload))).extract(PDF, "inv.pdf", FIELDS)
+    content = json.dumps({"total": {"raw": "  ", "page": True, "quote": 5}, "extra": {"raw": "x"}})
+    result = extractor(FakeOllama(content)).extract(DOC, FIELDS)
     assert result == {
         "total": Candidate("total", None, None, None),
         "customer": Candidate("customer", None, None, None),
     }
 
 
-def test_refusal_raises():
-    refusal = SimpleNamespace(type="message", content=[SimpleNamespace(type="refusal", refusal="I can't help")])
-    with pytest.raises(ExtractionError, match="refused: I can't help"):
-        OpenAIExtractor(client=fake_client(ok({}, [refusal]))).extract(PDF, "inv.pdf", FIELDS)
-
-
-def test_incomplete_raises():
-    resp = SimpleNamespace(status="incomplete", output_text="", output=[],
-                           incomplete_details=SimpleNamespace(reason="max_output_tokens"))
-    with pytest.raises(ExtractionError, match="max_output_tokens"):
-        OpenAIExtractor(client=fake_client(resp)).extract(PDF, "inv.pdf", FIELDS)
-
-
 def test_invalid_json_raises():
-    resp = SimpleNamespace(status="completed", output_text="nope", output=[], incomplete_details=None)
     with pytest.raises(ExtractionError, match="valid JSON"):
-        OpenAIExtractor(client=fake_client(resp)).extract(PDF, "inv.pdf", FIELDS)
+        extractor(FakeOllama("sorry, no idea")).extract(DOC, FIELDS)
 
 
-def test_api_error_wrapped():
-    err = openai.APIConnectionError(request=httpx.Request("POST", "https://api.openai.com/v1/responses"))
-    with pytest.raises(ExtractionError, match="OpenAI request failed"):
-        OpenAIExtractor(client=fake_client(error=err)).extract(PDF, "inv.pdf", FIELDS)
+def test_http_error_status_raises_with_message():
+    with pytest.raises(ExtractionError, match="not in the Free plan"):
+        extractor(FakeOllama(status=402)).extract(DOC, FIELDS)
+
+
+def test_unreachable_raises():
+    with pytest.raises(ExtractionError, match="request failed"):
+        extractor(FakeOllama(error=httpx.ConnectError("refused"))).extract(DOC, FIELDS)
 
 
 def test_name_reflects_model():
-    assert OpenAIExtractor(model="gpt-6-sol", client=fake_client()).name == "openai:gpt-6-sol"
+    assert OllamaExtractor(model="nemotron-3-super:cloud").name == "ollama:nemotron-3-super:cloud"
+
+
+@pytest.mark.e2e
+def test_live_gemma_digital_and_scanned():
+    pages = [[("ACME SARL - FACTURE N° 2026-1042", 16), ("Date: 03/10/2026", 11),
+              ("Sous-total HT: 1.000,00 EUR", 11, 300), ("Total TTC: 1.200,00 EUR", 11, 300)]]
+    fields = [Field("total", "number", "Grand total including tax", True),
+              Field("invoice_date", "date", "Invoice issue date", True)]
+    for image_only in (False, True):
+        result = OllamaExtractor().extract(Document(build_pdf(pages, image_only=image_only)), fields)
+        assert result["total"].raw and "1.200,00" in result["total"].raw
+        assert result["invoice_date"].raw == "03/10/2026"
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+Add to `tests/test_pdf.py`:
+```python
+def test_page_text():
+    doc = Document(build_pdf(TWO_PAGES))
+    assert "Total TTC: 1.200,00 EUR" in doc.page_text(2)
+    assert "Total" not in doc.page_text(1)
+```
 
-Run: `uv run pytest tests/test_openai_extractor.py -q`
-Expected: FAIL — `ModuleNotFoundError: No module named 'clef_extractor.extractors'`
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/test_ollama_extractor.py tests/test_pdf.py -q`
+Expected: FAIL — `ModuleNotFoundError: No module named 'clef_extractor.extractors'` and `AttributeError: ... 'page_text'`
+
+- [ ] **Step 3: Add `Document.page_text` to `pdf.py`**
+
+Insert after `has_text` in `src/clef_extractor/pdf.py`:
+```python
+    def page_text(self, page: int) -> str:
+        return self._page(page).get_text()
+```
+and change `has_text` to reuse it:
+```python
+    def has_text(self, page: int) -> bool:
+        return bool(self.page_text(page).strip())
+```
 
 - [ ] **Step 4: Implement the extractor package**
 
@@ -1112,6 +1103,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from ..pdf import Document
 from ..schema import Field
 
 
@@ -1130,24 +1122,8 @@ class ExtractionError(Exception):
 class Extractor(Protocol):
     name: str
 
-    def extract(self, pdf: bytes, filename: str, fields: list[Field]) -> dict[str, Candidate]: ...
-```
+    def extract(self, doc: Document, fields: list[Field]) -> dict[str, Candidate]: ...
 
-`src/clef_extractor/extractors/openai.py`:
-```python
-"""OpenAI Responses API backend (default model: GPT-6.1 Sol)."""
-
-from __future__ import annotations
-
-import base64
-import json
-
-import openai
-
-from ..schema import Field, extraction_json_schema
-from .base import Candidate, ExtractionError
-
-DEFAULT_MODEL = "gpt-6.1-sol"
 
 INSTRUCTIONS = """You extract field values from PDF documents. For each requested field return:
 - raw: the value exactly as printed (keep currency symbols, separators and date format), or null if the document does not contain it. Never guess, compute or reformat values.
@@ -1155,7 +1131,7 @@ INSTRUCTIONS = """You extract field values from PDF documents. For each requeste
 - quote: a short verbatim snippet copied from a single line of the document that contains the value, such as its label and the value (at most about 100 characters)."""
 
 
-def _prompt(fields: list[Field]) -> str:
+def fields_prompt(fields: list[Field]) -> str:
     lines = [f"- {f.name} ({f.type}{', required' if f.required else ''}): {f.description}" for f in fields]
     return "Fields to extract:\n" + "\n".join(lines)
 
@@ -1164,64 +1140,164 @@ def _text(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _candidate(name: str, item: object) -> Candidate:
+def to_candidate(name: str, item: object) -> Candidate:
+    """Build a Candidate from one field's JSON, discarding anything malformed."""
     if not isinstance(item, dict):
         return Candidate(name, None, None, None)
     page = item.get("page")
     page = page if isinstance(page, int) and not isinstance(page, bool) else None
     return Candidate(name, _text(item.get("raw")), page, _text(item.get("quote")))
+```
+
+`src/clef_extractor/extractors/ollama.py`:
+```python
+"""Ollama backend (default: gemma4:31b-cloud). Sends page text, plus page images for vision models."""
+
+from __future__ import annotations
+
+import base64
+import json
+import re
+
+import httpx
+
+from ..pdf import Document
+from ..schema import Field, extraction_json_schema
+from .base import INSTRUCTIONS, Candidate, ExtractionError, fields_prompt, to_candidate
+
+DEFAULT_MODEL = "gemma4:31b-cloud"
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
-class OpenAIExtractor:
-    def __init__(self, model: str = DEFAULT_MODEL, effort: str = "low", client=None):
-        self.client = client if client is not None else openai.OpenAI()
+def _parse(content: str) -> dict:
+    """Accept {name: {...}} or [{"field": name, ...}], optionally inside a ``` fence."""
+    fenced = _FENCE.search(content or "")
+    try:
+        data = json.loads(fenced.group(1) if fenced else content)
+    except (TypeError, json.JSONDecodeError) as e:
+        raise ExtractionError("model did not return valid JSON") from e
+    if isinstance(data, list):
+        data = {d["field"]: d for d in data if isinstance(d, dict) and isinstance(d.get("field"), str)}
+    if not isinstance(data, dict):
+        raise ExtractionError("model did not return a JSON object")
+    return data
+
+
+class OllamaExtractor:
+    def __init__(self, model: str = DEFAULT_MODEL, base_url: str = "http://localhost:11434",
+                 timeout: float = 300.0, transport: httpx.BaseTransport | None = None):
         self.model = model
-        self.effort = effort
-        self.name = f"openai:{model}"
+        self.name = f"ollama:{model}"
+        self._http = httpx.Client(base_url=base_url, timeout=timeout, transport=transport)
 
-    def extract(self, pdf: bytes, filename: str, fields: list[Field]) -> dict[str, Candidate]:
-        file_data = "data:application/pdf;base64," + base64.b64encode(pdf).decode()
-        try:
-            resp = self.client.responses.create(
-                model=self.model,
-                reasoning={"effort": self.effort},
-                instructions=INSTRUCTIONS,
-                input=[{"role": "user", "content": [
-                    {"type": "input_file", "filename": filename, "file_data": file_data},
-                    {"type": "input_text", "text": _prompt(fields)},
-                ]}],
-                text={"format": {"type": "json_schema", "name": "extraction", "strict": True,
-                                 "schema": extraction_json_schema(fields)}},
-            )
-        except openai.OpenAIError as e:
-            raise ExtractionError(f"OpenAI request failed: {e}") from e
+    def has_vision(self) -> bool:
+        return "vision" in self._post("/api/show", {"model": self.model}).get("capabilities", [])
 
-        for item in getattr(resp, "output", None) or []:
-            for part in getattr(item, "content", None) or []:
-                if getattr(part, "type", None) == "refusal":
-                    raise ExtractionError(f"model refused: {part.refusal}")
-        if resp.status != "completed":
-            reason = getattr(getattr(resp, "incomplete_details", None), "reason", None)
-            raise ExtractionError(f"OpenAI response {resp.status}" + (f": {reason}" if reason else ""))
+    def extract(self, doc: Document, fields: list[Field]) -> dict[str, Candidate]:
+        pages = []
+        for p in range(1, doc.page_count + 1):
+            text = doc.page_text(p).strip() or "(no text layer — see page image)"
+            pages.append(f"=== Page {p} ===\n{text}")
+        user: dict = {"role": "user", "content": "\n\n".join(pages) + "\n\n" + fields_prompt(fields)}
+        if self.has_vision():
+            user["images"] = [base64.b64encode(doc.render_page(p)).decode()
+                              for p in range(1, doc.page_count + 1)]
+        reply = self._post("/api/chat", {
+            "model": self.model,
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0},
+            "format": extraction_json_schema(fields),
+            "messages": [{"role": "system", "content": INSTRUCTIONS}, user],
+        })
+        data = _parse(reply.get("message", {}).get("content", ""))
+        return {f.name: to_candidate(f.name, data.get(f.name)) for f in fields}
+
+    def _post(self, path: str, body: dict) -> dict:
         try:
-            data = json.loads(resp.output_text)
-        except (TypeError, json.JSONDecodeError) as e:
-            raise ExtractionError("model did not return valid JSON") from e
-        if not isinstance(data, dict):
-            raise ExtractionError("model did not return a JSON object")
-        return {f.name: _candidate(f.name, data.get(f.name)) for f in fields}
+            r = self._http.post(path, json=body)
+        except httpx.HTTPError as e:
+            raise ExtractionError(f"Ollama request failed: {e}") from e
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
+        if r.status_code != 200:
+            raise ExtractionError(f"Ollama error ({r.status_code}) for {self.model}: {data.get('error', r.text)}")
+        return data
+```
+
+`src/clef_extractor/extractors/openai.py` — kept for later, **entirely commented out** (the `openai` package is not a dependency; to enable: `uv add openai`, uncomment, and add `--backend` wiring in `cli.py`):
+```python
+"""OpenAI Responses API backend (GPT-6.1 Sol). DISABLED — see the note below."""
+
+# To enable: `uv add openai`, uncomment this module, and select it in cli.py.
+# Verified API shape (2026-10-03): Responses API, PDF as base64 `input_file`, strict json_schema
+# via `text.format`, `reasoning.effort` low..max. Combination of input_file + json_schema is
+# unconfirmed — run one real request before relying on it.
+#
+# import base64
+# import json
+#
+# import openai
+#
+# from ..pdf import Document
+# from ..schema import Field, extraction_json_schema
+# from .base import INSTRUCTIONS, Candidate, ExtractionError, fields_prompt, to_candidate
+#
+# DEFAULT_MODEL = "gpt-6.1-sol"
+#
+#
+# class OpenAIExtractor:
+#     def __init__(self, model: str = DEFAULT_MODEL, effort: str = "low", client=None):
+#         self.client = client if client is not None else openai.OpenAI()
+#         self.model = model
+#         self.effort = effort
+#         self.name = f"openai:{model}"
+#
+#     def extract(self, doc: Document, fields: list[Field]) -> dict[str, Candidate]:
+#         file_data = "data:application/pdf;base64," + base64.b64encode(doc.data).decode()
+#         try:
+#             resp = self.client.responses.create(
+#                 model=self.model,
+#                 reasoning={"effort": self.effort},
+#                 instructions=INSTRUCTIONS,
+#                 input=[{"role": "user", "content": [
+#                     {"type": "input_file", "filename": doc.name, "file_data": file_data},
+#                     {"type": "input_text", "text": fields_prompt(fields)},
+#                 ]}],
+#                 text={"format": {"type": "json_schema", "name": "extraction", "strict": True,
+#                                  "schema": extraction_json_schema(fields)}},
+#             )
+#         except openai.OpenAIError as e:
+#             raise ExtractionError(f"OpenAI request failed: {e}") from e
+#
+#         for item in getattr(resp, "output", None) or []:
+#             for part in getattr(item, "content", None) or []:
+#                 if getattr(part, "type", None) == "refusal":
+#                     raise ExtractionError(f"model refused: {part.refusal}")
+#         if resp.status != "completed":
+#             reason = getattr(getattr(resp, "incomplete_details", None), "reason", None)
+#             raise ExtractionError(f"OpenAI response {resp.status}" + (f": {reason}" if reason else ""))
+#         try:
+#             data = json.loads(resp.output_text)
+#         except (TypeError, json.JSONDecodeError) as e:
+#             raise ExtractionError("model did not return valid JSON") from e
+#         if not isinstance(data, dict):
+#             raise ExtractionError("model did not return a JSON object")
+#         return {f.name: to_candidate(f.name, data.get(f.name)) for f in fields}
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_openai_extractor.py -q`
-Expected: all PASS.
+Run: `uv run pytest tests/test_ollama_extractor.py tests/test_pdf.py -q` → all PASS.
+Run: `uv run pytest tests/test_ollama_extractor.py -m e2e -q` → live gemma test PASS (needs Ollama signed in; free plan).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/clef_extractor/extractors tests/test_openai_extractor.py tasks/todo.md
-git commit -m "feat: OpenAI GPT-Sol extractor behind Extractor interface"
+git add src/clef_extractor/extractors src/clef_extractor/pdf.py tests/test_ollama_extractor.py tests/test_pdf.py tasks/todo.md
+git commit -m "feat: Ollama cloud extractor (gemma4:31b-cloud); OpenAI backend kept commented out"
 ```
 
 ---
@@ -1783,11 +1859,11 @@ git commit -m "feat: strict gate with interactive CLI review"
 - Test: `tests/test_cli.py`
 
 **Interfaces:**
-- Consumes: `load_fields`, `SchemaError` (T1); `Document`, `PdfError` (T2); `ClefClient`, `ClefError` (T3); `OpenAIExtractor`, `ExtractionError`, `DEFAULT_MODEL` (T4); `Validator` (T5); `apply_gate`, `CliReviewer` (T6).
+- Consumes: `load_fields`, `SchemaError` (T1); `Document`, `PdfError` (T2); `ClefClient`, `ClefError` (T3); `OllamaExtractor`, `ExtractionError`, `DEFAULT_MODEL` (T4); `Validator` (T5); `apply_gate`, `CliReviewer` (T6).
 - Produces:
   - `run(doc: Document, fields: list[Field], extractor, validator: Validator, reviewer, threshold: float) -> dict` — the result JSON (spec §6 plus `"file"`).
   - `main(argv: list[str] | None = None) -> int` — exit code 0 / 2 / 1.
-  - CLI: `clef-extract PDF --fields FIELDS [--threshold 0.5] [-o OUT] [--model gpt-6.1-sol] [--ollama-url http://localhost:11434]`
+  - CLI: `clef-extract PDF --fields FIELDS [--threshold 0.5] [-o OUT] [--model gemma4:31b-cloud] [--ollama-url http://localhost:11434]`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1810,7 +1886,7 @@ class FakeExtractor:
     def __init__(self, candidates):
         self.candidates, self.called = candidates, False
 
-    def extract(self, pdf, filename, fields):
+    def extract(self, doc, fields):
         self.called = True
         return self.candidates
 
@@ -1849,7 +1925,7 @@ def files(tmp_path):
 
 def setup(monkeypatch, clef, extractor, stdin=""):
     monkeypatch.setattr(cli, "ClefClient", lambda **kw: clef)
-    monkeypatch.setattr(cli, "OpenAIExtractor", lambda **kw: extractor)
+    monkeypatch.setattr(cli, "OllamaExtractor", lambda **kw: extractor)
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
 
 
@@ -1936,11 +2012,9 @@ import os
 import sys
 from pathlib import Path
 
-import openai
-
 from .clef import ClefClient, ClefError
 from .extractors.base import ExtractionError
-from .extractors.openai import DEFAULT_MODEL, OpenAIExtractor
+from .extractors.ollama import DEFAULT_MODEL, OllamaExtractor
 from .gate import apply_gate
 from .pdf import Document, PdfError
 from .review_cli import CliReviewer
@@ -1949,7 +2023,7 @@ from .validator import Validator
 
 
 def run(doc: Document, fields: list[Field], extractor, validator: Validator, reviewer, threshold: float) -> dict:
-    candidates = extractor.extract(doc.data, doc.name, fields)
+    candidates = extractor.extract(doc, fields)
     results = [validator.validate(f, candidates[f.name]) for f in fields]
     complete = apply_gate(results, threshold, reviewer)
     return {
@@ -1983,7 +2057,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--fields", required=True, help="JSON file defining the fields to extract")
     p.add_argument("--threshold", type=_threshold, default=0.5, help="minimum clef-flash score to accept (0-1)")
     p.add_argument("-o", "--output", help="write result JSON here instead of stdout")
-    p.add_argument("--model", default=os.environ.get("OPENAI_MODEL", DEFAULT_MODEL), help="OpenAI model")
+    p.add_argument("--model", default=os.environ.get("EXTRACT_MODEL", DEFAULT_MODEL), help="Ollama model used for extraction")
     p.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama base URL")
     return p.parse_args(argv)
 
@@ -1993,11 +2067,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         fields = load_fields(args.fields)
         doc = Document.from_path(args.pdf)
-        extractor = OpenAIExtractor(model=args.model)
+        extractor = OllamaExtractor(model=args.model, base_url=args.ollama_url)
         clef = ClefClient(base_url=args.ollama_url)
-        clef.health()  # before any OpenAI spend
+        clef.health()  # before any extractor request
         result = run(doc, fields, extractor, Validator(clef, doc), CliReviewer(doc), args.threshold)
-    except (SchemaError, PdfError, ClefError, ExtractionError, openai.OpenAIError) as e:
+    except (SchemaError, PdfError, ClefError, ExtractionError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     text = json.dumps(result, indent=2, ensure_ascii=False)
@@ -2022,14 +2096,14 @@ Expected: all PASS (whole suite, live tests deselected).
 ````markdown
 # clef-pdf-extractor
 
-Extract fields from any PDF with OpenAI GPT-6.1 Sol, validate every value locally with
+Extract fields from any PDF with an Ollama cloud model (default `gemma4:31b-cloud`), validate every value locally with
 [clef-flash](https://ollama.com/library/clef-flash), and get asked about any required field that fails.
 
 ## Setup
 
 ```bash
 ollama pull clef-flash:9b      # local validator
-export OPENAI_API_KEY=sk-...   # extractor
+ollama signin                  # cloud extractor (gemma4:31b-cloud works on the free plan)
 uv sync
 ```
 
@@ -2048,7 +2122,7 @@ uv run clef-extract invoice.pdf --fields fields.json -o result.json
 }
 ```
 
-Options: `--threshold 0.5` (minimum clef-flash score), `--model gpt-6.1-sol` (or `OPENAI_MODEL`),
+Options: `--threshold 0.5` (minimum clef-flash score), `--model gemma4:31b-cloud` (or `EXTRACT_MODEL`; any Ollama model),
 `--ollama-url http://localhost:11434`.
 
 When a required field fails, you're prompted: Enter accepts, typing replaces the value, `s` skips, `o` opens the page.
@@ -2059,7 +2133,7 @@ Exit codes: 0 complete, 2 a required field was skipped, 1 error.
 ```bash
 uv run pytest               # unit tests, no network
 uv run pytest -m clef       # needs Ollama with clef-flash:9b
-uv run pytest -m e2e        # needs OPENAI_API_KEY + Ollama; costs money
+uv run pytest -m e2e        # needs Ollama signed in (cloud extractor) + clef-flash
 ```
 
 ## Calibration
@@ -2070,7 +2144,7 @@ uv run python eval/calibrate.py
 ```
 ````
 
-- [ ] **Step 6: Manual smoke run (needs Ollama + `OPENAI_API_KEY`)**
+- [ ] **Step 6: Manual smoke run (needs Ollama signed in + clef-flash)**
 
 ```bash
 uv run python -c "
@@ -2099,7 +2173,7 @@ git commit -m "feat: clef-extract CLI wiring, exit codes and README"
 - Test: `tests/test_calibration.py`, `tests/test_e2e.py`
 
 **Interfaces:**
-- Consumes: `build_pdf` (T2); `Document` (T2); `ClefClient` (T3); `Candidate`, `OpenAIExtractor` (T4); `Validator` (T5); `Decision` (T6); `run` (T7); `Field`, `parse_fields`, `normalize` (T1).
+- Consumes: `build_pdf` (T2); `Document` (T2); `ClefClient` (T3); `Candidate`, `OllamaExtractor` (T4); `Validator` (T5); `Decision` (T6); `run` (T7); `Field`, `parse_fields`, `normalize` (T1).
 - Produces:
   - `@dataclass(frozen=True) class Trial: sample: str; field: str; raw: str; truthful: bool; score: float; located: bool`
   - `@dataclass(frozen=True) class ThresholdStats: threshold: float; false_accepts: int; false_flags: int; wrong_total: int; true_total: int` with `.false_accept_rate`, `.false_flag_rate`
@@ -2346,7 +2420,7 @@ Expected: 8 `wrote …` lines; `eval/samples/` has 24 files.
 """Score true and adversarial wrong values with clef-flash; report error rates per threshold.
 
 Usage: uv run python eval/calibrate.py [--samples eval/samples] [--csv eval/results.csv]
-No OpenAI calls: candidates come from the ground truth.
+No extractor calls: candidates come from the ground truth.
 """
 
 from __future__ import annotations
@@ -2428,7 +2502,7 @@ Expected: a per-trial log, the threshold table, a recommended threshold and the 
 
 `tests/test_e2e.py`:
 ```python
-"""Full pipeline against real OpenAI + local clef-flash. Costs money: run with `-m e2e`."""
+"""Full pipeline against the Ollama cloud extractor + local clef-flash. Run with `-m e2e`."""
 
 import json
 from pathlib import Path
@@ -2437,7 +2511,7 @@ import pytest
 
 from clef_extractor.cli import run
 from clef_extractor.clef import ClefClient
-from clef_extractor.extractors.openai import OpenAIExtractor
+from clef_extractor.extractors.ollama import OllamaExtractor
 from clef_extractor.gate import Decision
 from clef_extractor.pdf import Document
 from clef_extractor.schema import normalize, parse_fields
@@ -2463,14 +2537,14 @@ def test_pipeline_end_to_end(name):
         asked.append((r.field.name, r.raw, r.score))
         return Decision("skip")
 
-    result = run(doc, fields, OpenAIExtractor(), Validator(clef, doc), reviewer, 0.5)
+    result = run(doc, fields, OllamaExtractor(), Validator(clef, doc), reviewer, 0.5)
     assert asked == [], f"unexpected review prompts: {asked}"
     assert result["complete"] is True
     for field_name, spec in truth["fields"].items():
         assert result["fields"][field_name]["value"] == normalize(spec["type"], spec["raw"])
 ```
 
-Run: `uv run pytest -m e2e -q` (needs `OPENAI_API_KEY` + Ollama; ~3 OpenAI calls)
+Run: `uv run pytest -m e2e -q` (needs Ollama signed in + clef-flash; ~5 cloud calls)
 Expected: 3 PASS. A failure here is a finding, not a test to weaken: report which field, the raw value and the score.
 
 - [ ] **Step 8: Final verification and commit**
@@ -2478,7 +2552,7 @@ Expected: 3 PASS. A failure here is a finding, not a test to weaken: report whic
 Run: `uv run pytest -q && uv run pytest -m clef -q`
 Expected: all PASS.
 
-Fill `## Review` in `tasks/todo.md`: spike result, calibration table + recommended threshold, e2e result, anything that deviated from the plan.
+Fill `## Review` in `tasks/todo.md`: calibration table + recommended threshold, e2e result, anything that deviated from the plan.
 
 ```bash
 git add src/clef_extractor/calibration.py eval/make_samples.py eval/calibrate.py tests/test_calibration.py tests/test_e2e.py tasks/todo.md
